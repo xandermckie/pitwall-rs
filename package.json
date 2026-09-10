@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "dev": "npm run tauri --prefix apps/desktop -- dev",
+    "build": "npm run tauri --prefix apps/desktop -- build",
+    "test": "cargo test -p pitwall-sim && npm test --prefix apps/desktop"
+  }
+}

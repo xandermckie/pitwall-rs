@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+import { formatGap, formatLapTime, formatPercent } from "./format";
+
+describe("formatLapTime", () => {
+  it("formats a 90s lap as 1:30.000", () => {
+    expect(formatLapTime(90)).toBe("1:30.000");
+  });
+
+  it("returns a placeholder for invalid values", () => {
+    expect(formatLapTime(Number.NaN)).toBe("--:--.---");
+  });
+});
+
+describe("formatGap", () => {
+  it("labels a zero gap as leader", () => {
+    expect(formatGap(0)).toBe("LEADER");
+  });
+
+  it("prefixes positive gaps", () => {
+    expect(formatGap(1.234)).toBe("+1.23");
+  });
+});
+
+describe("formatPercent", () => {
+  it("renders one decimal place", () => {
+    expect(formatPercent(0.256)).toBe("25.6%");
+  });
+});
