@@ -34,9 +34,22 @@ Each race draws tyre warm-up / linear degradation / cliff, constructor pace, con
 
 `simulate_many` runs N independent seeded races (default 500). The UI plays the run whose lead-driver finish is closest to the median, and shows P(win), P(podium), expected points, and the 5th–95th position band.
 
-## Windows build
+## GitHub
+
+This tree is a new git repo. Publish it (GitHub CLI must be logged in):
 
 ```bash
+gh auth login
+gh repo create pitwall-rs --public --source=. --remote=origin --push
+```
+
+## Windows build
+
+This machine’s Rust host is `x86_64-pc-windows-gnu` and Tauri needs `dlltool` or the MSVC toolchain. After installing Visual Studio Build Tools (C++ workload):
+
+```bash
+rustup toolchain install stable-x86_64-pc-windows-msvc
+rustup default stable-x86_64-pc-windows-msvc
 cd apps/desktop
 npm run tauri build
 ```
