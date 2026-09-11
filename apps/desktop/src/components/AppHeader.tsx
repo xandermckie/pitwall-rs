@@ -6,6 +6,8 @@ interface AppHeaderProps {
   canOpenRace: boolean;
   seed: number | null;
   inSafetyCar: boolean;
+  isRaining: boolean;
+  lastLap: boolean;
   onModeChange: (mode: AppMode) => void;
   onPause: () => void;
   isPaused: boolean;
@@ -20,6 +22,8 @@ export function AppHeader({
   canOpenRace,
   seed,
   inSafetyCar,
+  isRaining,
+  lastLap,
   onModeChange,
   onPause,
   isPaused,
@@ -51,7 +55,9 @@ export function AppHeader({
       </nav>
 
       <div className="header-meta">
+        {lastLap ? <span className="last-flag">LAST LAP</span> : null}
         {inSafetyCar ? <span className="sc-flag">SAFETY CAR</span> : null}
+        {isRaining && !inSafetyCar ? <span className="rain-flag">RAIN</span> : null}
         {seed !== null ? <span>SEED {seed}</span> : null}
       </div>
 

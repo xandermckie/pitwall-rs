@@ -139,6 +139,8 @@ export default function App(): JSX.Element {
         canOpenRace={canOpenRace}
         seed={simulation.result?.seed ?? null}
         inSafetyCar={Boolean(snap?.inSc)}
+        isRaining={Boolean(snap?.isRaining)}
+        lastLap={Boolean(snap && simulation.result && snap.lap === simulation.result.playback.meta.totalLaps)}
         onModeChange={setMode}
         onPause={playback.togglePause}
         isPaused={playback.isPaused}
@@ -173,6 +175,7 @@ export default function App(): JSX.Element {
           onScrub={onScrub}
           isScrubbing={isScrubbing}
           isRunningOverlay={simulation.isRunning}
+          isFinish={playback.isComplete}
         />
       ) : null}
       {mode === "analysis" && simulation.result ? (

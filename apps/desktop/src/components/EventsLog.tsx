@@ -13,6 +13,8 @@ const KIND_LABEL: Record<RaceEvent["kind"], string> = {
   gain: "GAIN",
   drop: "DROP",
   fl: "FL",
+  overtake: "PASS",
+  lead: "LEAD",
 };
 
 export function EventsLog({ events }: EventsLogProps): JSX.Element {
@@ -21,9 +23,9 @@ export function EventsLog({ events }: EventsLogProps): JSX.Element {
       <div className="panel-hdr">Race events</div>
       <div className="events-log">
         {events.map((event) => (
-          <div className="ev" key={event.id}>
+          <div className={`ev kind-${event.kind}`} key={event.id}>
             <span className="ev-lap">L{event.lap}</span>
-            <span className="ev-kind">{KIND_LABEL[event.kind]}</span>
+            <span className={`ev-kind kind-${event.kind}`}>{KIND_LABEL[event.kind]}</span>
             <span>{event.text}</span>
           </div>
         ))}

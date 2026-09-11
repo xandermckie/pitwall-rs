@@ -1,6 +1,6 @@
 import type { LapSnapshot, RaceResult, TyreModel } from "../types/sim";
 
-export type EventKind = "sc" | "sc-end" | "rain" | "pit" | "gain" | "drop" | "fl";
+export type EventKind = "sc" | "sc-end" | "rain" | "pit" | "gain" | "drop" | "fl" | "overtake" | "lead";
 
 export interface RaceEvent {
   id: string;
@@ -9,11 +9,16 @@ export interface RaceEvent {
   text: string;
 }
 
+export interface EventScanState {
+  positions: Map<string, number>;
+  leader: string | null;
+}
+
 export function detectLapEvents(
   snap: LapSnapshot,
   result: RaceResult,
   tyreModel: TyreModel,
-  previousLeadPos: Map<string, number>,
+  state: EventScanState,
 ): RaceEvent[] {
   const events: RaceEvent[] = [];
 
@@ -58,8 +63,21 @@ export function detectLapEvents(
     });
   }
 
+  const leader = snap.cars.find((car) => car.position === 1);
+  if (leader && state.leader && state.leader !== leader.driver) {
+    events.push({
+      id: `lead-${leader.driver}-${snap.lap}`,
+      lap: snap.lap,
+      kind: "lead",
+      text: `${leader.driver} takes the lead from ${state.leader}.`,
+    });
+  }
+  if (leader) {
+    state.leader = leader.driver;
+  }
+
   for (const car of snap.cars.filter((item) => item.isLead || item.isTeammate)) {
-    const prev = previousLeadPos.get(car.driver);
+    const prev = state.positions.get(car.driver);
     if (prev !== undefined && prev !== car.position) {
       const gained = prev - car.position;
       if (gained > 0) {
@@ -78,7 +96,7 @@ export function detectLapEvents(
         });
       }
     }
-    previousLeadPos.set(car.driver, car.position);
+    state.positions.set(car.driver, car.position);
   }
 
   if (snap.fastestLap.lap === snap.lap && snap.fastestLap.driver) {

@@ -129,11 +129,28 @@ button {
   font-size: 11px;
 }
 
+.sc-flag,
+.rain-flag,
+.last-flag {
+  padding: 3px 8px;
+  letter-spacing: 0.12em;
+}
+
 .sc-flag {
   color: var(--warn);
   border: 1px solid var(--warn);
-  padding: 3px 8px;
-  letter-spacing: 0.12em;
+}
+
+.rain-flag {
+  color: var(--info);
+  border: 1px solid var(--info);
+}
+
+.last-flag {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  animation: flag-pulse 1s ease-in-out infinite;
 }
 
 .header-actions {
@@ -355,6 +372,18 @@ button {
   overflow: hidden;
 }
 
+.info-strip.last-lap {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.info-strip.chequered {
+  box-shadow: inset 0 -2px 0 #e7edf6;
+}
+
+.strip-item.highlight {
+  background: rgba(196, 69, 60, 0.16);
+}
+
 .strip-item {
   display: flex;
   align-items: baseline;
@@ -412,7 +441,7 @@ button {
 
 .t-row {
   display: grid;
-  grid-template-columns: 28px 3px 1fr 22px 58px;
+  grid-template-columns: 28px 3px 1fr 22px 24px 58px;
   gap: 8px;
   align-items: center;
   padding: 6px 10px;
@@ -429,8 +458,17 @@ button {
   background: #151c28;
 }
 
-.t-row.gaining {
+.t-row.gaining,
+.t-row.overtake {
   background: #13241c;
+}
+
+.t-row.losing {
+  background: #241318;
+}
+
+.t-row.battle {
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 
 .t-pos {
@@ -472,11 +510,38 @@ button {
   color: var(--muted);
 }
 
-.drs-pill {
+.t-gap.battle-gap {
+  color: var(--warn);
+}
+
+.t-delta {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: right;
+  color: transparent;
+}
+
+.t-delta.up {
+  color: var(--good);
+}
+
+.t-delta.down {
+  color: var(--bad);
+}
+
+.drs-pill,
+.pit-pill {
   margin-left: 6px;
   font-size: 9px;
-  color: var(--good);
   letter-spacing: 0.08em;
+}
+
+.drs-pill {
+  color: var(--good);
+}
+
+.pit-pill {
+  color: var(--warn);
 }
 
 .centre {
@@ -615,6 +680,26 @@ button {
   margin: 4px 0;
 }
 
+.dc-delta {
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+.dc-delta.up {
+  color: var(--good);
+}
+
+.dc-delta.down {
+  color: var(--bad);
+}
+
+.dc-pressure {
+  margin-top: 6px;
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 .dc-meta,
 .dc-laptime {
   color: var(--muted);
@@ -646,6 +731,98 @@ button {
   font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--accent-2);
+}
+
+.ev-kind.kind-gain,
+.ev-kind.kind-overtake,
+.ev-kind.kind-lead {
+  color: var(--good);
+}
+
+.ev-kind.kind-drop {
+  color: var(--bad);
+}
+
+.ev-kind.kind-sc,
+.ev-kind.kind-pit {
+  color: var(--warn);
+}
+
+.ev-kind.kind-rain,
+.ev-kind.kind-sc-end {
+  color: var(--info);
+}
+
+.broadcast-callout {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  min-width: 220px;
+  max-width: min(420px, 80%);
+  padding: 10px 16px 12px;
+  background: rgba(10, 13, 18, 0.88);
+  border: 1px solid var(--border-strong);
+  pointer-events: none;
+  text-align: center;
+  animation: callout-in 0.35s ease-out;
+}
+
+.broadcast-kicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 4px;
+}
+
+.broadcast-detail {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.broadcast-callout.kind-overtake .broadcast-kicker,
+.broadcast-callout.kind-lead .broadcast-kicker {
+  color: var(--good);
+}
+
+.broadcast-callout.kind-sc .broadcast-kicker,
+.broadcast-callout.kind-battle .broadcast-kicker,
+.broadcast-callout.kind-pit .broadcast-kicker {
+  color: var(--warn);
+}
+
+.broadcast-callout.kind-last-lap .broadcast-kicker,
+.broadcast-callout.kind-chequered .broadcast-kicker {
+  color: var(--accent);
+}
+
+.broadcast-callout.kind-rain .broadcast-kicker,
+.broadcast-callout.kind-fl .broadcast-kicker {
+  color: var(--info);
+}
+
+@keyframes callout-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes flag-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .analysis {

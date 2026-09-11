@@ -32,3 +32,16 @@ export function formatPosition(position: number): string {
 export function formatSeed(seed: number): string {
   return seed.toString();
 }
+
+export function driverCode(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const last = parts[parts.length - 1] ?? name;
+  return last.slice(0, 3).toUpperCase();
+}
+
+export function formatDelta(delta: number | undefined): string {
+  if (delta === undefined || delta === 0) {
+    return "";
+  }
+  return delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`;
+}
