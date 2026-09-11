@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import type { LapSnapshot } from "../types/sim";
 import { driverCode } from "../utils/format";
-import { pathForCircuit, type TrackPoint } from "../utils/tracks";
+import { paintCircuit } from "../utils/trackRender";
+import { pathLengths, type TrackPoint } from "../utils/tracks";
 
 interface TrackCanvasProps {
   circuit: string;
@@ -116,20 +117,17 @@ export function TrackCanvas({
     const resize = (): void => {
       canvas.width = wrap.clientWidth;
       canvas.height = wrap.clientHeight;
-      const raw = pathForCircuit(circuit);
-      const padX = canvas.width * 0.08;
-      const padY = canvas.height * 0.1;
-      const drawW = canvas.width - padX * 2;
-      const drawH = canvas.height - padY * 2;
-      scaled = raw.map((point) => ({ x: padX + point.x * drawW, y: padY + point.y * drawH }));
-      lengths = [0];
-      for (let i = 1; i < scaled.length; i += 1) {
-        const dx = scaled[i].x - scaled[i - 1].x;
-        const dy = scaled[i].y - scaled[i - 1].y;
-        lengths.push(lengths[i - 1] + Math.hypot(dx, dy));
+      offscreen = document.createElement("canvas");
+      offscreen.width = canvas.width;
+      offscreen.height = canvas.height;
+      const layer = offscreen.getContext("2d", { alpha: false });
+      if (!layer) {
+        return;
       }
-      total = lengths[lengths.length - 1] ?? 1;
-      offscreen = bake(canvas.width, canvas.height, scaled, circuit);
+      scaled = paintCircuit(layer, canvas.width, canvas.height, circuit);
+      const measured = pathLengths(scaled, true);
+      lengths = measured.lengths;
+      total = measured.total;
       rain.length = 0;
       for (let i = 0; i < 48; i += 1) {
         rain.push({
@@ -152,8 +150,8 @@ export function TrackCanvas({
       }
       const seg = lengths[hi] - lengths[lo];
       const frac = seg > 0 ? (target - lengths[lo]) / seg : 0;
-      const a = scaled[lo];
-      const b = scaled[Math.min(hi, scaled.length - 1)];
+      const a = scaled[lo % scaled.length];
+      const b = scaled[hi % scaled.length];
       return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
     };
 
@@ -352,71 +350,4 @@ export function TrackCanvas({
       <canvas id="track-canvas" ref={canvasRef} />
     </div>
   );
-}
-
-function bake(width: number, height: number, scaled: TrackPoint[], circuit: string): HTMLCanvasElement {
-  const off = document.createElement("canvas");
-  off.width = width;
-  off.height = height;
-  const ctx = off.getContext("2d", { alpha: false });
-  if (!ctx) {
-    return off;
-  }
-  ctx.fillStyle = "#0a0d12";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "rgba(255,255,255,0.03)";
-  for (let x = 18; x < width; x += 36) {
-    for (let y = 18; y < height; y += 36) {
-      ctx.fillRect(x, y, 1, 1);
-    }
-  }
-  const stroke = (lineWidth: number, color: string, dash: number[] = []): void => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
-    ctx.setLineDash(dash);
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    scaled.forEach((point, i) => (i === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
-    ctx.closePath();
-    ctx.stroke();
-    ctx.setLineDash([]);
-  };
-  stroke(28, "#151b24");
-  stroke(20, "#1c2430");
-  stroke(1, "rgba(255,255,255,0.08)", [5, 12]);
-
-  if (scaled.length >= 2) {
-    const a = scaled[0];
-    const b = scaled[1];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = (-dy / len) * 11;
-    const ny = (dx / len) * 11;
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(a.x - nx, a.y - ny);
-    ctx.lineTo(a.x + nx, a.y + ny);
-    ctx.stroke();
-    const cells = 4;
-    for (let i = 0; i < cells; i += 1) {
-      const t0 = i / cells - 0.5;
-      const t1 = (i + 1) / cells - 0.5;
-      ctx.fillStyle = i % 2 === 0 ? "#f2f4f8" : "#15181e";
-      ctx.beginPath();
-      ctx.moveTo(a.x + nx * t0 * 2, a.y + ny * t0 * 2);
-      ctx.lineTo(a.x + nx * t1 * 2, a.y + ny * t1 * 2);
-      ctx.lineTo(a.x + nx * t1 * 2 + dx * 0.15, a.y + ny * t1 * 2 + dy * 0.15);
-      ctx.lineTo(a.x + nx * t0 * 2 + dx * 0.15, a.y + ny * t0 * 2 + dy * 0.15);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.font = "11px IBM Plex Mono";
-  ctx.fillText(circuit.toUpperCase(), 14, height - 32);
-  return off;
 }
