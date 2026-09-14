@@ -15,8 +15,10 @@
         "title": "PITWALL",
         "width": 1440,
         "height": 900,
-        "minWidth": 1180,
-        "minHeight": 740
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "maximizable": true
       }
     ],
     "security": {

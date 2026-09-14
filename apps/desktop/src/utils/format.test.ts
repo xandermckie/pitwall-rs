@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { driverCode, formatDelta, formatGap, formatLapTime, formatPercent } from "./format";
+import {
+  driverCode,
+  formatDelta,
+  formatGap,
+  formatLapTime,
+  formatPercent,
+  formatPercentRange,
+} from "./format";
 
 describe("formatLapTime", () => {
   it("formats a 90s lap as 1:30.000", () => {
@@ -24,6 +31,12 @@ describe("formatGap", () => {
 describe("formatPercent", () => {
   it("renders one decimal place", () => {
     expect(formatPercent(0.256)).toBe("25.6%");
+  });
+});
+
+describe("formatPercentRange", () => {
+  it("renders a compact inclusive percentage range", () => {
+    expect(formatPercentRange(0.1234, 0.2876)).toBe("12.3–28.8%");
   });
 });
 

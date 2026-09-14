@@ -6,7 +6,7 @@ use rand_distr::{Distribution, Normal};
 use crate::data::{points_for, race_by_id, team_by_name, TEAMS};
 use crate::error::SimError;
 use crate::strategy::{build_pit_lap_set, generate_rival_stints, score_strategy};
-use crate::tyre::calculate_tyre_delta;
+use crate::tyre::{calculate_tyre_delta, fresh_tyre_out_lap_penalty};
 use crate::types::{
     CarSnapshot, Compound, FastestLap, LapSnapshot, Race, RaceMeta, RaceResult, RaceStats,
     SimConfig, Stint, Weather,
@@ -17,6 +17,44 @@ const DIRTY_AIR_WINDOW: f64 = 1.2;
 const DIRTY_AIR_PENALTY: f64 = 0.18;
 const DRS_BONUS: f64 = -0.22;
 
+fn traffic_delta(interval: f64, has_drs: bool, overtake_factor: f64) -> f64 {
+    let passing = overtake_factor.clamp(0.0, 1.0);
+    if has_drs {
+        DRS_BONUS * (0.5 + passing)
+    } else if interval > 0.0 && interval < DIRTY_AIR_WINDOW {
+        DIRTY_AIR_PENALTY * (1.5 - passing)
+    } else {
+        0.0
+    }
+}
+
+fn race_tyre_delta(
+    compound: Compound,
+    tyre_age: u16,
+    track_deg: f64,
+    deg_resistance: f64,
+    is_out_lap: bool,
+) -> f64 {
+    let out_lap_penalty = if is_out_lap {
+        fresh_tyre_out_lap_penalty(compound)
+    } else {
+        0.0
+    };
+    calculate_tyre_delta(compound, tyre_age, track_deg, deg_resistance) + out_lap_penalty
+}
+
+fn rival_pit_compound(
+    planned_compound: Compound,
+    weather: Weather,
+    is_raining: bool,
+) -> Compound {
+    match (is_raining, weather) {
+        (true, Weather::Mixed) => Compound::Inter,
+        (true, Weather::Wet) => Compound::Wet,
+        _ => planned_compound,
+    }
+}
+
 #[derive(Clone)]
 struct CarPlan {
     id: u8,
@@ -24,6 +62,7 @@ struct CarPlan {
     team: String,
     color: String,
     pace: f64,
+    qualifying_score: f64,
     deg_resistance: f64,
     is_user: bool,
     is_lead: bool,
@@ -83,6 +122,10 @@ pub fn simulate_once(config: &SimConfig, rng: &mut impl Rng) -> Result<RaceResul
         .collect();
     let mut stint_idx: HashMap<u8, usize> = cars.iter().map(|c| (c.id, 0)).collect();
     let mut stint_lap: HashMap<u8, u16> = cars.iter().map(|c| (c.id, 0)).collect();
+    let mut active_compounds: HashMap<u8, Compound> = cars
+        .iter()
+        .map(|car| (car.id, car.stints[0].compound))
+        .collect();
     let mut traffic: HashMap<u8, TrafficState> = cars
         .iter()
         .map(|c| {
@@ -104,6 +147,8 @@ pub fn simulate_once(config: &SimConfig, rng: &mut impl Rng) -> Result<RaceResul
             build_pit_lap_set(&car.stints, jitter).into_iter().collect(),
         );
     }
+    let mut out_lap_pending: HashSet<u8> = HashSet::new();
+    let mut weather_pitted: HashSet<u8> = HashSet::new();
 
     let mut fastest_lap = FastestLap {
         time: 999.9,
@@ -127,9 +172,17 @@ pub fn simulate_once(config: &SimConfig, rng: &mut impl Rng) -> Result<RaceResul
                 *slot
             };
             let idx = (*stint_idx.get(&car.id).expect("stint idx")).min(car.stints.len() - 1);
-            let compound = car.stints[idx].compound;
+            let compound = *active_compounds.get(&car.id).expect("active compound");
             let tyre_delta =
                 calculate_tyre_delta(compound, age, race.deg, car.deg_resistance);
+            let timing_tyre_delta = race_tyre_delta(
+                compound,
+                age,
+                race.deg,
+                car.deg_resistance,
+                out_lap_pending.remove(&car.id),
+            );
+            let out_lap_penalty = timing_tyre_delta - tyre_delta;
 
             let mut rain_penalty = 0.0;
             if is_rain && !matches!(compound, Compound::Inter | Compound::Wet) {
@@ -143,35 +196,55 @@ pub fn simulate_once(config: &SimConfig, rng: &mut impl Rng) -> Result<RaceResul
 
             let base_lap = BASE_LAP * car.pace;
             let mut lap_time = if in_sc {
-                base_lap * 1.28 + sc_noise.sample(rng)
+                base_lap * 1.28 + out_lap_penalty + sc_noise.sample(rng)
             } else {
-                base_lap + tyre_delta + rain_penalty + driver_error + lap_noise.sample(rng)
+                base_lap
+                    + timing_tyre_delta
+                    + rain_penalty
+                    + driver_error
+                    + lap_noise.sample(rng)
             };
 
             if !in_sc && lap > 1 {
                 if let Some(prev) = traffic.get(&car.id) {
-                    if prev.drs {
-                        lap_time += DRS_BONUS;
-                    } else if prev.interval > 0.0 && prev.interval < DIRTY_AIR_WINDOW {
-                        lap_time += DIRTY_AIR_PENALTY;
-                    }
+                    lap_time += traffic_delta(prev.interval, prev.drs, race.overtake);
                 }
             }
 
             let mut pitting = false;
-            if pit_schedules
+            let is_scheduled_pit = pit_schedules
                 .get(&car.id)
-                .is_some_and(|set| set.contains(&lap))
-            {
+                .is_some_and(|set| set.contains(&lap));
+            let is_weather_pit = is_rain
+                && !car.is_lead
+                && !matches!(compound, Compound::Inter | Compound::Wet)
+                && !weather_pitted.contains(&car.id);
+            if is_scheduled_pit || is_weather_pit {
                 let pit_loss = if in_sc {
                     7.0 + rng.gen_range(0.0..2.0)
                 } else {
                     20.5 + rng.gen_range(0.0..1.8)
                 };
                 *cum_times.get_mut(&car.id).expect("cum") += pit_loss;
-                let next = (*stint_idx.get(&car.id).expect("idx") + 1).min(car.stints.len() - 1);
+                let next = if is_scheduled_pit {
+                    (*stint_idx.get(&car.id).expect("idx") + 1).min(car.stints.len() - 1)
+                } else {
+                    idx
+                };
                 stint_idx.insert(car.id, next);
                 stint_lap.insert(car.id, 0);
+                let planned_compound = car.stints[next].compound;
+                let next_compound = if car.is_lead {
+                    planned_compound
+                } else {
+                    // Scheduled stops must stay weather-aware or rivals would revert to dry tyres.
+                    rival_pit_compound(planned_compound, config.weather, is_rain)
+                };
+                active_compounds.insert(car.id, next_compound);
+                out_lap_pending.insert(car.id);
+                if is_weather_pit {
+                    weather_pitted.insert(car.id);
+                }
                 pitting = true;
             }
 
@@ -185,8 +258,7 @@ pub fn simulate_once(config: &SimConfig, rng: &mut impl Rng) -> Result<RaceResul
                 };
             }
 
-            let post_idx = (*stint_idx.get(&car.id).expect("idx")).min(car.stints.len() - 1);
-            let post_compound = car.stints[post_idx].compound;
+            let post_compound = *active_compounds.get(&car.id).expect("active compound");
             let post_age = *stint_lap.get(&car.id).expect("age");
 
             lap_cars.push(CarSnapshot {
@@ -304,6 +376,7 @@ fn assemble_grid(
     let mut cars = Vec::with_capacity(20);
     let mut next_id: u8 = 0;
     let pace_noise = Normal::new(0.0, 0.003).expect("valid normal");
+    let qualifying_noise = Normal::new(0.0, 0.0005).expect("valid normal");
 
     cars.push(CarPlan {
         id: next_id,
@@ -311,6 +384,7 @@ fn assemble_grid(
         team: user_team.name.to_string(),
         color: user_team.color.to_string(),
         pace: user_team.race_pace,
+        qualifying_score: user_team.qual_gap,
         deg_resistance: user_team.deg_resistance,
         is_user: true,
         is_lead: true,
@@ -327,6 +401,7 @@ fn assemble_grid(
         team: user_team.name.to_string(),
         color: user_team.color.to_string(),
         pace: user_team.race_pace + 0.002,
+        qualifying_score: user_team.qual_gap + 0.002 + qualifying_noise.sample(rng),
         deg_resistance: user_team.deg_resistance,
         is_user: true,
         is_lead: false,
@@ -348,6 +423,9 @@ fn assemble_grid(
                 team: team.name.to_string(),
                 color: team.color.to_string(),
                 pace: team.race_pace + f64::from(d_idx as u8) * 0.002 + pace_noise.sample(rng),
+                qualifying_score: team.qual_gap
+                    + f64::from(d_idx as u8) * 0.002
+                    + qualifying_noise.sample(rng),
                 deg_resistance: team.deg_resistance,
                 is_user: false,
                 is_lead: false,
@@ -390,8 +468,8 @@ fn assign_unique_grid(cars: &mut [CarPlan], lead_grid: u8) {
     let mut others: Vec<usize> = (1..cars.len()).collect();
     others.sort_by(|a, b| {
         cars[*a]
-            .pace
-            .partial_cmp(&cars[*b].pace)
+            .qualifying_score
+            .partial_cmp(&cars[*b].qualifying_score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -492,5 +570,139 @@ mod tests {
         let b = simulate_once(&cfg, &mut StdRng::seed_from_u64(42)).unwrap();
         assert_eq!(a.stats.final_position, b.stats.final_position);
         assert_eq!(a.laps[10].cars[0].cum_time, b.laps[10].cars[0].cum_time);
+    }
+
+    #[test]
+    fn traffic_effect_scales_with_track_overtaking() {
+        let low_passing_dirty_air = traffic_delta(0.8, false, 0.1);
+        let high_passing_dirty_air = traffic_delta(0.8, false, 0.65);
+        let low_passing_drs = traffic_delta(0.8, true, 0.1);
+        let high_passing_drs = traffic_delta(0.8, true, 0.65);
+
+        assert!(low_passing_dirty_air > high_passing_dirty_air + 0.05);
+        assert!(high_passing_drs < low_passing_drs - 0.05);
+    }
+
+    #[test]
+    fn race_tyre_delta_applies_penalty_only_on_out_lap() {
+        let compound = Compound::Hard;
+        let baseline = calculate_tyre_delta(compound, 1, 0.8, 0.82);
+        let out_lap = race_tyre_delta(compound, 1, 0.8, 0.82, true);
+        let following_lap = race_tyre_delta(compound, 2, 0.8, 0.82, false);
+
+        assert_eq!(
+            out_lap,
+            baseline + fresh_tyre_out_lap_penalty(compound)
+        );
+        assert_eq!(
+            following_lap,
+            calculate_tyre_delta(compound, 2, 0.8, 0.82)
+        );
+    }
+
+    #[test]
+    fn rival_pit_compound_matches_active_weather() {
+        assert_eq!(
+            rival_pit_compound(Compound::Soft, Weather::Mixed, true),
+            Compound::Inter
+        );
+        assert_eq!(
+            rival_pit_compound(Compound::Medium, Weather::Wet, true),
+            Compound::Wet
+        );
+        assert_eq!(
+            rival_pit_compound(Compound::Hard, Weather::Wet, false),
+            Compound::Hard
+        );
+    }
+
+    #[test]
+    fn rival_grid_uses_seeded_qualifying_gap() {
+        let mut cfg = sample_config();
+        cfg.team = "Red Bull".into();
+        cfg.grid_position = 20;
+        let race = race_by_id(cfg.race_id).expect("race");
+
+        let grid_for_seed = |seed| {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut cars = assemble_grid(&cfg, &race, &mut rng).expect("grid");
+            assign_unique_grid(&mut cars, cfg.grid_position);
+            cars.sort_by_key(|car| car.grid_pos);
+            cars.into_iter()
+                .map(|car| (car.driver, car.grid_pos))
+                .collect::<Vec<_>>()
+        };
+
+        let first = grid_for_seed(3);
+        let repeated = grid_for_seed(3);
+        let best_grid = |team: &str| {
+            first
+                .iter()
+                .filter(|(driver, _)| {
+                    TEAMS
+                        .iter()
+                        .find(|record| record.drivers.contains(&driver.as_str()))
+                        .is_some_and(|record| record.name == team)
+                })
+                .map(|(_, grid_pos)| *grid_pos)
+                .min()
+                .expect("team on grid")
+        };
+
+        assert_eq!(first, repeated);
+        assert!(best_grid("McLaren") < best_grid("Ferrari"));
+    }
+
+    #[test]
+    fn rivals_switch_once_to_wets_when_rain_begins() {
+        let mut cfg = sample_config();
+        cfg.weather = Weather::Wet;
+        let result = simulate_once(&cfg, &mut StdRng::seed_from_u64(29)).expect("wet race");
+        let rain_lap = &result.laps[0];
+
+        assert!(rain_lap.is_raining);
+        assert!(rain_lap
+            .cars
+            .iter()
+            .filter(|car| !car.is_lead)
+            .all(|car| car.pitting && car.compound == Compound::Wet));
+
+        let lead = rain_lap.cars.iter().find(|car| car.is_lead).expect("lead");
+        assert!(!lead.pitting);
+        assert_eq!(lead.compound, Compound::Medium);
+        assert!(result.laps[1]
+            .cars
+            .iter()
+            .filter(|car| !car.is_lead)
+            .all(|car| !car.pitting));
+    }
+
+    #[test]
+    fn rivals_switch_to_inters_in_mixed_weather_without_changing_user_strategy() {
+        let mut cfg = sample_config();
+        cfg.weather = Weather::Mixed;
+        let result = simulate_once(&cfg, &mut StdRng::seed_from_u64(29)).expect("mixed race");
+        let rain_lap = result.meta.rain_lap.expect("seed produces rain");
+        let rain_snapshot = &result.laps[usize::from(rain_lap - 1)];
+
+        assert!(rain_snapshot
+            .cars
+            .iter()
+            .filter(|car| !car.is_lead)
+            .all(|car| car.pitting && car.compound == Compound::Inter));
+
+        let lead_pit_laps = result
+            .laps
+            .iter()
+            .filter(|lap| lap.cars.iter().any(|car| car.is_lead && car.pitting))
+            .map(|lap| lap.lap)
+            .collect::<Vec<_>>();
+        assert_eq!(lead_pit_laps, vec![22, 48]);
+        assert!(result.laps.iter().all(|lap| {
+            lap.cars
+                .iter()
+                .find(|car| car.is_lead)
+                .is_some_and(|car| !matches!(car.compound, Compound::Inter | Compound::Wet))
+        }));
     }
 }

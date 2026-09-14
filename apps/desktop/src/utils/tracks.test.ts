@@ -1,24 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { CIRCUITS, applyFit, makeFit, pathForCircuit, resampleClosed } from "./tracks";
+import {
+  CIRCUITS,
+  alignCircuitPath,
+  applyFit,
+  makeFit,
+  pathForCircuit,
+  resampleClosed,
+} from "./tracks";
 
 describe("pathForCircuit", () => {
-  it("keeps a distinct outline for every named grand prix", () => {
+  it("uses a dense GPS outline for every named grand prix", () => {
     const names = Object.keys(CIRCUITS);
     expect(names.length).toBeGreaterThanOrEqual(12);
     for (const name of names) {
       const path = pathForCircuit(name);
-      expect(path.length).toBeGreaterThan(12);
+      expect(path.length).toBeGreaterThan(80);
     }
   });
 
-  it("does not collapse Suzuka into a simple oval", () => {
+  it("rotates and reverses a trace around its start line", () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ];
+
+    expect(alignCircuitPath(path, 2, false)).toEqual([
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+    ]);
+    expect(alignCircuitPath(path, 2, true)).toEqual([
+      { x: 1, y: 1 },
+      { x: 1, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+    ]);
+  });
+
+  it("anchors every circuit label to its GPS trace", () => {
+    for (const circuit of Object.values(CIRCUITS)) {
+      for (const label of circuit.labels) {
+        const isOnTrace = circuit.path.some(
+          (point) => point.x === label.x && point.y === label.y,
+        );
+        expect(isOnTrace, `${circuit.name}: ${label.name}`).toBe(true);
+      }
+    }
+  });
+
+  it("preserves Suzuka's GPS aspect ratio", () => {
     const path = pathForCircuit("Suzuka");
     const xs = path.map((point) => point.x);
     const ys = path.map((point) => point.y);
     const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
-    expect(width / height).toBeGreaterThan(0.7);
-    expect(width / height).toBeLessThan(1.6);
+    expect(width / height).toBeGreaterThan(1.7);
+    expect(width / height).toBeLessThan(2);
   });
 });
 

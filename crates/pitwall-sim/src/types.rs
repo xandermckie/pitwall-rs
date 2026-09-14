@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SimError;
 
+pub const MAX_SAFE_SEED: u64 = 9_007_199_254_740_991;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Race {
@@ -106,7 +108,7 @@ pub struct SimConfig {
 }
 
 fn default_iterations() -> u32 {
-    500
+    2_000
 }
 
 impl SimConfig {
@@ -118,7 +120,14 @@ impl SimConfig {
             return Err(SimError::InvalidConfig("No stints provided".into()));
         }
         if self.iterations == 0 {
-            return Err(SimError::InvalidConfig("iterations must be at least 1".into()));
+            return Err(SimError::InvalidConfig(
+                "iterations must be at least 1".into(),
+            ));
+        }
+        if self.seed.is_some_and(|seed| seed > MAX_SAFE_SEED) {
+            return Err(SimError::InvalidConfig(
+                "seed must be a non-negative safe integer".into(),
+            ));
         }
         Ok(())
     }
@@ -212,13 +221,21 @@ pub struct MonteCarloReport {
     pub position_histogram: Vec<u32>,
     pub expected_points: f64,
     pub p_win: f64,
+    pub p_win_ci_low: f64,
+    pub p_win_ci_high: f64,
     pub p_podium: f64,
+    pub p_podium_ci_low: f64,
+    pub p_podium_ci_high: f64,
     pub p_points: f64,
+    pub p_points_ci_low: f64,
+    pub p_points_ci_high: f64,
     pub sc_rate: f64,
     pub rain_rate: f64,
     pub median_position: u8,
     pub p05_position: u8,
     pub p95_position: u8,
+    pub position_std_dev: f64,
+    pub position_iqr: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -227,4 +244,44 @@ pub struct SimResponse {
     pub playback: RaceResult,
     pub monte_carlo: MonteCarloReport,
     pub seed: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_config(seed: u64) -> SimConfig {
+        SimConfig {
+            race_id: 5,
+            team: "McLaren".into(),
+            grid_position: 2,
+            stints: vec![Stint {
+                compound: Compound::Medium,
+                laps: 66,
+            }],
+            weather: Weather::Dry,
+            safety_car_expected: false,
+            iterations: 1,
+            seed: Some(seed),
+        }
+    }
+
+    #[test]
+    fn simulation_config_defaults_to_standard_precision() {
+        assert_eq!(default_iterations(), 2_000);
+    }
+
+    #[test]
+    fn accepts_javascript_max_safe_integer_seed() {
+        assert!(sample_config(MAX_SAFE_SEED).validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_seed_above_javascript_safe_integer_range() {
+        let error = sample_config(MAX_SAFE_SEED + 1)
+            .validate()
+            .expect_err("unsafe seed must be rejected");
+
+        assert!(error.to_string().contains("safe integer"));
+    }
 }

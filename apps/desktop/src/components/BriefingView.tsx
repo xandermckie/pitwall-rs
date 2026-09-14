@@ -1,5 +1,6 @@
 import type { BriefingForm, Race, Team, Weather } from "../types/sim";
 import type { JSX } from "react";
+import { parseBoundedIntegerInput } from "../utils/simulationValidation";
 import { CircuitPreview } from "./CircuitPreview";
 import { StintBuilder } from "./StintBuilder";
 
@@ -12,6 +13,7 @@ interface BriefingViewProps {
   catalogError: string | null;
   isLoading: boolean;
   isRunning: boolean;
+  seedError: string | null;
   simError: string | null;
   onChange: (patch: Partial<BriefingForm>) => void;
   onStopsChange: (stops: number) => void;
@@ -27,12 +29,18 @@ export function BriefingView({
   catalogError,
   isLoading,
   isRunning,
+  seedError,
   simError,
   onChange,
   onStopsChange,
   onSubmit,
 }: BriefingViewProps): JSX.Element {
-  const canRun = !isLoading && !isRunning && Boolean(selectedRace) && Boolean(selectedTeam);
+  const canRun =
+    !isLoading &&
+    !isRunning &&
+    !seedError &&
+    Boolean(selectedRace) &&
+    Boolean(selectedTeam);
 
   return (
     <div className="briefing view">
@@ -46,6 +54,7 @@ export function BriefingView({
               ? "Loading calendar and constructors..."
               : `${races.length} Grands Prix · ${teams.length} constructors`}
         </p>
+        {seedError ? <p className="status-line error">{seedError}</p> : null}
         {simError ? <p className="status-line error">{simError}</p> : null}
 
         <div className="form-grid">
@@ -85,7 +94,16 @@ export function BriefingView({
               min={1}
               max={20}
               value={form.gridPosition}
-              onChange={(event) => onChange({ gridPosition: Number(event.target.value) })}
+              onChange={(event) => {
+                const gridPosition = parseBoundedIntegerInput(
+                  event.target.value,
+                  1,
+                  20,
+                );
+                if (gridPosition !== null) {
+                  onChange({ gridPosition });
+                }
+              }}
             />
           </div>
           <div className="field">
@@ -118,10 +136,9 @@ export function BriefingView({
               value={form.iterations}
               onChange={(event) => onChange({ iterations: Number(event.target.value) })}
             >
-              <option value={100}>100 — quick</option>
-              <option value={500}>500 — default</option>
-              <option value={1000}>1000 — tighter envelope</option>
-              <option value={2000}>2000 — max</option>
+              <option value={500}>500 — quick</option>
+              <option value={2_000}>2,000 — default</option>
+              <option value={5_000}>5,000 — high confidence</option>
             </select>
           </div>
           <div className="field">
@@ -137,13 +154,16 @@ export function BriefingView({
             <label htmlFor="cfg-speed">Playback speed</label>
             <select
               id="cfg-speed"
-              value={form.playbackMs}
-              onChange={(event) => onChange({ playbackMs: Number(event.target.value) })}
+              value={form.playbackSpeed}
+              onChange={(event) => onChange({ playbackSpeed: Number(event.target.value) })}
             >
-              <option value={900}>Slow</option>
-              <option value={400}>Normal</option>
-              <option value={120}>Fast</option>
-              <option value={30}>Ultra</option>
+              <option value={1}>1x — real time</option>
+              <option value={2}>2x</option>
+              <option value={4}>4x</option>
+              <option value={8}>8x</option>
+              <option value={16}>16x — default</option>
+              <option value={32}>32x</option>
+              <option value={64}>64x</option>
             </select>
           </div>
           <div className="field full">

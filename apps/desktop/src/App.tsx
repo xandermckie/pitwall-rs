@@ -6,10 +6,12 @@ import { BriefingView } from "./components/BriefingView";
 import { DisclaimerFooter } from "./components/DisclaimerFooter";
 import { RaceView } from "./components/RaceView";
 import { useCatalog } from "./hooks/useCatalog";
+import { useFullscreen } from "./hooks/useFullscreen";
 import { useKeyboardPlayback } from "./hooks/useKeyboardPlayback";
 import { usePlayback } from "./hooks/usePlayback";
 import { useSimulation } from "./hooks/useSimulation";
 import type { AppMode, BriefingForm, SimConfig } from "./types/sim";
+import { parseSeed } from "./utils/seed";
 import { defaultStints, stintTotal } from "./utils/stints";
 import "./styles/app.css";
 
@@ -19,15 +21,16 @@ const INITIAL: BriefingForm = {
   gridPosition: 2,
   weather: "DRY",
   safetyCarExpected: false,
-  iterations: 500,
+  iterations: 2_000,
   seed: "",
   stops: 2,
   stints: defaultStints(2, 66),
-  playbackMs: 400,
+  playbackSpeed: 16,
 };
 
 export default function App(): JSX.Element {
   const catalog = useCatalog();
+  const fullscreen = useFullscreen();
   const simulation = useSimulation();
   const [form, setForm] = useState<BriefingForm>(INITIAL);
   const [mode, setMode] = useState<AppMode>("briefing");
@@ -36,7 +39,8 @@ export default function App(): JSX.Element {
 
   const selectedRace = catalog.races.find((race) => race.id === form.raceId) ?? catalog.races[0];
   const selectedTeam = catalog.teams.find((team) => team.name === form.team) ?? catalog.teams[0];
-  const playback = usePlayback(simulation.result?.playback ?? null, form.playbackMs);
+  const parsedSeed = useMemo(() => parseSeed(form.seed), [form.seed]);
+  const playback = usePlayback(simulation.result?.playback ?? null, form.playbackSpeed);
 
   useEffect(() => {
     if (!selectedRace) {
@@ -74,7 +78,9 @@ export default function App(): JSX.Element {
     if (Math.abs(total - selectedRace.laps) > 3) {
       return;
     }
-    const seedValue = form.seed.trim() === "" ? null : Number(form.seed);
+    if (parsedSeed.error) {
+      return;
+    }
     const config: SimConfig = {
       raceId: selectedRace.id,
       team: selectedTeam.name,
@@ -83,7 +89,7 @@ export default function App(): JSX.Element {
       weather: form.weather,
       safetyCarExpected: form.safetyCarExpected,
       iterations: form.iterations,
-      seed: seedValue !== null && Number.isFinite(seedValue) ? seedValue : null,
+      seed: parsedSeed.value,
     };
     void simulation.run(config).then((response) => {
       if (response) {
@@ -91,27 +97,23 @@ export default function App(): JSX.Element {
         setFocusId(null);
       }
     });
-  }, [form, selectedRace, selectedTeam, simulation.run]);
+  }, [form, parsedSeed, selectedRace, selectedTeam, simulation.run]);
 
   const onReset = useCallback((): void => {
     simulation.reset();
     setMode("briefing");
     setFocusId(null);
     playback.restart();
-  }, [playback, simulation]);
+  }, [playback.restart, simulation]);
 
-  const onScrub = useCallback((lap: number): void => {
+  const onScrub = useCallback((seconds: number): void => {
     setIsScrubbing(true);
-    playback.scrubTo(Math.max(0, lap - 1));
-  }, [playback]);
+    playback.scrubToTime(seconds);
+  }, [playback.scrubToTime]);
 
   const onKeyScrub = useCallback((delta: number): void => {
-    const next = Math.min(
-      Math.max(0, playback.index + delta),
-      (simulation.result?.playback.laps.length ?? 1) - 1,
-    );
-    playback.scrubTo(next);
-  }, [playback, simulation.result]);
+    playback.skipLap(delta);
+  }, [playback.skipLap]);
 
   useKeyboardPlayback({
     enabled: mode === "race" && Boolean(simulation.result),
@@ -125,15 +127,17 @@ export default function App(): JSX.Element {
     }
     const timer = window.setTimeout(() => setIsScrubbing(false), 120);
     return () => window.clearTimeout(timer);
-  }, [isScrubbing, playback.index]);
+  }, [isScrubbing, playback.raceTime]);
 
   const snap = playback.snapshot;
   const canOpenRace = Boolean(simulation.result);
 
-  const headerSpeed = useMemo(() => playback.speedMs, [playback.speedMs]);
-
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-mode={mode}
+      data-fullscreen={fullscreen.isFullscreen ? "true" : "false"}
+    >
       <AppHeader
         mode={mode}
         canOpenRace={canOpenRace}
@@ -142,12 +146,11 @@ export default function App(): JSX.Element {
         isRaining={Boolean(snap?.isRaining)}
         lastLap={Boolean(snap && simulation.result && snap.lap === simulation.result.playback.meta.totalLaps)}
         onModeChange={setMode}
-        onPause={playback.togglePause}
-        isPaused={playback.isPaused}
-        pauseDisabled={!canOpenRace || mode !== "race"}
-        speedMs={headerSpeed}
-        onSpeedChange={playback.setSpeedMs}
         onReset={onReset}
+        isFullscreen={fullscreen.isFullscreen}
+        isFullscreenPending={fullscreen.isFullscreenPending}
+        fullscreenError={fullscreen.fullscreenError}
+        onFullscreenToggle={fullscreen.toggleFullscreen}
       />
       {mode === "briefing" || !simulation.result || !snap ? (
         <BriefingView
@@ -159,6 +162,7 @@ export default function App(): JSX.Element {
           catalogError={catalog.error}
           isLoading={catalog.isLoading}
           isRunning={simulation.isRunning}
+          seedError={parsedSeed.error}
           simError={simulation.error}
           onChange={patchForm}
           onStopsChange={onStopsChange}
@@ -169,10 +173,17 @@ export default function App(): JSX.Element {
         <RaceView
           result={simulation.result.playback}
           snap={snap}
+          raceTime={playback.raceTime}
+          duration={playback.duration}
+          isPaused={playback.isPaused}
+          speed={playback.speed}
           tyreModel={catalog.tyreModel}
           focusId={focusId}
           onFocus={setFocusId}
           onScrub={onScrub}
+          onTogglePause={playback.togglePause}
+          onSpeedChange={playback.setSpeed}
+          onRestart={playback.restart}
           isScrubbing={isScrubbing}
           isRunningOverlay={simulation.isRunning}
           isFinish={playback.isComplete}

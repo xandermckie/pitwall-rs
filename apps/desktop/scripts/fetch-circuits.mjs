@@ -19,7 +19,7 @@ const CIRCUITS = [
   { id: "ae-2009", name: "Yas Marina" },
 ];
 
-const OUT = new URL("./circuit-paths.json", import.meta.url);
+const OUT = new URL("../src/data/circuit-paths.json", import.meta.url);
 
 async function main() {
   const result = {};
@@ -34,9 +34,10 @@ async function main() {
     result[circuit.name] = project(coords);
     console.log(`${circuit.name}: ${result[circuit.name].length} points`);
   }
-  await import("node:fs/promises").then((fs) =>
-    fs.writeFile(OUT, JSON.stringify(result), "utf8"),
-  );
+  await import("node:fs/promises").then(async (fs) => {
+    await fs.mkdir(new URL(".", OUT), { recursive: true });
+    await fs.writeFile(OUT, JSON.stringify(result), "utf8");
+  });
   console.log(`wrote ${OUT.pathname}`);
 }
 

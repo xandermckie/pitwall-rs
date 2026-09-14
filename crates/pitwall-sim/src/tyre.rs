@@ -43,6 +43,16 @@ pub fn params(compound: Compound) -> TyreParams {
     }
 }
 
+pub fn fresh_tyre_out_lap_penalty(compound: Compound) -> f64 {
+    match compound {
+        Compound::Soft => 0.45,
+        Compound::Medium => 0.65,
+        Compound::Hard => 0.90,
+        Compound::Inter => 0.75,
+        Compound::Wet => 1.00,
+    }
+}
+
 /// Lap-time delta in seconds versus a reference fresh medium.
 ///
 /// `deg_resistance` (0-1) reduces degradation after the peak window.
@@ -112,5 +122,16 @@ mod tests {
         let open = calculate_tyre_delta(Compound::Soft, 16, 1.0, 0.0);
         let resistant = calculate_tyre_delta(Compound::Soft, 16, 1.0, 0.88);
         assert!(resistant < open);
+    }
+
+    #[test]
+    fn fresh_tyre_out_lap_penalty_depends_on_compound() {
+        let soft = fresh_tyre_out_lap_penalty(Compound::Soft);
+        let medium = fresh_tyre_out_lap_penalty(Compound::Medium);
+        let hard = fresh_tyre_out_lap_penalty(Compound::Hard);
+
+        assert!(soft > 0.0);
+        assert!(soft < medium);
+        assert!(medium < hard);
     }
 }

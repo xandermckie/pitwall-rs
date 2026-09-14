@@ -1,5 +1,6 @@
 import type { Compound, Stint } from "../types/sim";
 import type { JSX } from "react";
+import { parseBoundedIntegerInput } from "../utils/simulationValidation";
 
 interface StintBuilderProps {
   stints: Stint[];
@@ -40,8 +41,12 @@ export function StintBuilder({ stints, raceLaps, onChange }: StintBuilderProps):
               max={78}
               value={stint.laps}
               onChange={(event) => {
+                const laps = parseBoundedIntegerInput(event.target.value, 3, 78);
+                if (laps === null) {
+                  return;
+                }
                 const next = stints.map((item, i) =>
-                  i === index ? { ...item, laps: Number(event.target.value) } : item,
+                  i === index ? { ...item, laps } : item,
                 );
                 onChange(next);
               }}

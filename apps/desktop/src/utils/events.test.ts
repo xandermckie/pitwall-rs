@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { CarSnapshot, Compound, LapSnapshot, RaceResult } from "../types/sim";
-import { detectLapEvents } from "./events";
+import type {
+  CarSnapshot,
+  Compound,
+  LapSnapshot,
+  LiveCarSnapshot,
+  LiveLapSnapshot,
+  RaceResult,
+} from "../types/sim";
+import { detectLapEvents, fullyCompletedFieldLaps } from "./events";
 
 function car(partial: Partial<CarSnapshot> & Pick<CarSnapshot, "id" | "driver" | "position">): CarSnapshot {
   return {
@@ -65,6 +72,30 @@ function resultStub(): RaceResult {
 }
 
 describe("detectLapEvents", () => {
+  it("gates full-snapshot events on the slowest car's completed laps", () => {
+    const liveCars: LiveCarSnapshot[] = [
+      {
+        ...car({ id: 1, driver: "LEADER", position: 1 }),
+        completedLaps: 5,
+        trackProgress: 0.1,
+        finished: false,
+      },
+      {
+        ...car({ id: 2, driver: "TRAILER", position: 2 }),
+        completedLaps: 4,
+        trackProgress: 0.9,
+        finished: false,
+      },
+    ];
+    const liveSnapshot: LiveLapSnapshot = {
+      ...snap(6, liveCars),
+      raceTime: 450,
+      cars: liveCars,
+    };
+
+    expect(fullyCompletedFieldLaps(liveSnapshot)).toBe(4);
+  });
+
   it("emits a lead change when P1 swaps", () => {
     const state = { positions: new Map<string, number>(), leader: null as string | null };
     const first = snap(4, [

@@ -2,12 +2,9 @@ import {
   applyFit,
   circuitDef,
   makeFit,
-  resampleClosed,
   type TrackPoint,
   type TrackTheme,
 } from "./tracks";
-
-const SAMPLE = 220;
 
 export function paintCircuit(
   ctx: CanvasRenderingContext2D,
@@ -22,7 +19,7 @@ export function paintCircuit(
     height,
     Math.min(width, height) * 0.1,
   );
-  const path = resampleClosed(circuit.path, SAMPLE).map((point) => applyFit(point, fit));
+  const path = circuit.path.map((point) => applyFit(point, fit));
   const theme = circuit.theme;
   const minDim = Math.min(width, height);
   const asphaltW = Math.max(11, minDim * 0.034);
@@ -31,12 +28,6 @@ export function paintCircuit(
   ctx.fillStyle = theme.ground;
   ctx.fillRect(0, 0, width, height);
   paintGrain(ctx, width, height);
-
-  ctx.beginPath();
-  trace(ctx, path);
-  ctx.closePath();
-  ctx.fillStyle = infieldColor(theme);
-  ctx.fill();
 
   for (const lake of circuit.water) {
     const fitted = lake.map((point) => applyFit(point, fit));
@@ -72,28 +63,6 @@ export function paintCircuit(
   ctx.fillStyle = "rgba(255,255,255,0.16)";
   ctx.fillText(circuit.name.toUpperCase(), 14, height - 32);
   return path;
-}
-
-function infieldColor(theme: TrackTheme): string {
-  return theme.water ? mix(theme.ground, "#1a2a22", 0.35) : mix(theme.ground, "#182018", 0.25);
-}
-
-function mix(a: string, b: string, t: number): string {
-  const pa = hex(a);
-  const pb = hex(b);
-  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
-  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
-  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
-  return `rgb(${r},${g},${bl})`;
-}
-
-function hex(color: string): [number, number, number] {
-  const raw = color.replace("#", "");
-  return [
-    Number.parseInt(raw.slice(0, 2), 16),
-    Number.parseInt(raw.slice(2, 4), 16),
-    Number.parseInt(raw.slice(4, 6), 16),
-  ];
 }
 
 function paintGrain(ctx: CanvasRenderingContext2D, width: number, height: number): void {

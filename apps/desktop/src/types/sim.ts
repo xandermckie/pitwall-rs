@@ -92,6 +92,17 @@ export interface LapSnapshot {
   cars: CarSnapshot[];
 }
 
+export interface LiveCarSnapshot extends CarSnapshot {
+  trackProgress: number;
+  completedLaps: number;
+  finished: boolean;
+}
+
+export interface LiveLapSnapshot extends Omit<LapSnapshot, "cars"> {
+  raceTime: number;
+  cars: LiveCarSnapshot[];
+}
+
 export interface RaceMeta {
   race: Race;
   team: string;
@@ -128,13 +139,21 @@ export interface MonteCarloReport {
   positionHistogram: number[];
   expectedPoints: number;
   pWin: number;
+  pWinCiLow: number;
+  pWinCiHigh: number;
   pPodium: number;
+  pPodiumCiLow: number;
+  pPodiumCiHigh: number;
   pPoints: number;
+  pPointsCiLow: number;
+  pPointsCiHigh: number;
   scRate: number;
   rainRate: number;
   medianPosition: number;
   p05Position: number;
   p95Position: number;
+  positionStdDev: number;
+  positionIqr: number;
 }
 
 export interface SimResponse {
@@ -153,5 +172,5 @@ export interface BriefingForm {
   seed: string;
   stops: number;
   stints: Stint[];
-  playbackMs: number;
+  playbackSpeed: number;
 }

@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import type { LapSnapshot } from "../types/sim";
+import type { LiveLapSnapshot } from "../types/sim";
 import { driverCode } from "../utils/format";
 import { paintCircuit } from "../utils/trackRender";
 import { pathLengths, type TrackPoint } from "../utils/tracks";
 
 interface TrackCanvasProps {
   circuit: string;
-  snap: LapSnapshot | null;
+  snap: LiveLapSnapshot | null;
   focusId: number | null;
   scrub: boolean;
   overtakeIds: number[];
@@ -16,7 +16,6 @@ interface TrackCanvasProps {
   totalLaps: number;
 }
 
-const LAP_REF = 92;
 const TRAIL = 10;
 
 interface PlacedCar {
@@ -52,25 +51,22 @@ export function TrackCanvas({
 }: TrackCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const snapRef = useRef<LapSnapshot | null>(snap);
+  const snapRef = useRef<LiveLapSnapshot | null>(snap);
+  const scrubRef = useRef(scrub);
   const focusRef = useRef<number | null>(focusId);
   const battleRef = useRef<Set<number>>(new Set(battleIds));
   const finishRef = useRef(isFinish);
   const totalRef = useRef(totalLaps);
   const flashStart = useRef(0);
   const flashIds = useRef<Set<number>>(new Set());
-  const phaseTarget = useRef(0);
-  const phaseCurrent = useRef(0);
 
   useEffect(() => {
     snapRef.current = snap;
-    if (snap) {
-      phaseTarget.current = snap.lap;
-      if (scrub) {
-        phaseCurrent.current = snap.lap;
-      }
-    }
-  }, [snap, scrub]);
+  }, [snap]);
+
+  useEffect(() => {
+    scrubRef.current = scrub;
+  }, [scrub]);
 
   useEffect(() => {
     focusRef.current = focusId;
@@ -110,13 +106,34 @@ export function TrackCanvas({
     let total = 0;
     let raf = 0;
     let last = 0;
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+    let pixelRatio = 1;
     const trails = new Map<number, TrackPoint[]>();
     const rain: RainDrop[] = [];
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const resize = (): void => {
-      canvas.width = wrap.clientWidth;
-      canvas.height = wrap.clientHeight;
+    const resize = (width: number, height: number): void => {
+      const nextWidth = Math.floor(width);
+      const nextHeight = Math.floor(height);
+      const nextPixelRatio = Math.max(1, window.devicePixelRatio || 1);
+      if (
+        nextWidth < 1 ||
+        nextHeight < 1 ||
+        (nextWidth === canvasWidth &&
+          nextHeight === canvasHeight &&
+          nextPixelRatio === pixelRatio)
+      ) {
+        return;
+      }
+
+      canvasWidth = nextWidth;
+      canvasHeight = nextHeight;
+      pixelRatio = nextPixelRatio;
+      canvas.width = Math.max(1, Math.round(canvasWidth * pixelRatio));
+      canvas.height = Math.max(1, Math.round(canvasHeight * pixelRatio));
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
       offscreen = document.createElement("canvas");
       offscreen.width = canvas.width;
       offscreen.height = canvas.height;
@@ -124,15 +141,16 @@ export function TrackCanvas({
       if (!layer) {
         return;
       }
-      scaled = paintCircuit(layer, canvas.width, canvas.height, circuit);
+      layer.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      scaled = paintCircuit(layer, canvasWidth, canvasHeight, circuit);
       const measured = pathLengths(scaled, true);
       lengths = measured.lengths;
       total = measured.total;
       rain.length = 0;
       for (let i = 0; i < 48; i += 1) {
         rain.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
+          x: Math.random() * canvasWidth,
+          y: Math.random() * canvasHeight,
           len: 6 + Math.random() * 10,
           speed: 4 + Math.random() * 6,
         });
@@ -159,26 +177,36 @@ export function TrackCanvas({
       raf = requestAnimationFrame(frame);
       if (ts - last < 14) return;
       last = ts;
-      ctx.drawImage(offscreen, 0, 0);
+      ctx.drawImage(
+        offscreen,
+        0,
+        0,
+        offscreen.width,
+        offscreen.height,
+        0,
+        0,
+        canvasWidth,
+        canvasHeight,
+      );
       const current = snapRef.current;
       if (!current || scaled.length === 0) return;
 
       if (current.inSc) {
         const pulse = reduceMotion ? 0.1 : 0.08 + 0.07 * Math.sin(ts / 220);
         ctx.fillStyle = `rgba(215,177,90,${pulse})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
       } else if (current.isRaining) {
         ctx.fillStyle = "rgba(77,142,207,0.08)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         if (!reduceMotion) {
           ctx.strokeStyle = "rgba(170,200,230,0.28)";
           ctx.lineWidth = 1;
           for (const drop of rain) {
             drop.y += drop.speed;
             drop.x += 0.6;
-            if (drop.y > canvas.height) {
+            if (drop.y > canvasHeight) {
               drop.y = -drop.len;
-              drop.x = Math.random() * canvas.width;
+              drop.x = Math.random() * canvasWidth;
             }
             ctx.beginPath();
             ctx.moveTo(drop.x, drop.y);
@@ -188,11 +216,12 @@ export function TrackCanvas({
         }
       }
 
-      phaseCurrent.current += (phaseTarget.current - phaseCurrent.current) * 0.12;
+      if (scrubRef.current) {
+        trails.clear();
+      }
       const placed: PlacedCar[] = current.cars.map((car) => {
-        const t = (((phaseCurrent.current - car.gap / LAP_REF) % 1) + 1) % 1;
-        const pos = positionAt(t);
-        const ahead = positionAt(t + 0.004);
+        const pos = positionAt(car.trackProgress);
+        const ahead = positionAt(car.trackProgress + 0.004);
         const trail = trails.get(car.id) ?? [];
         trail.push(pos);
         if (trail.length > TRAIL) trail.shift();
@@ -317,13 +346,13 @@ export function TrackCanvas({
       ctx.textAlign = "left";
       ctx.font = "10px IBM Plex Mono";
       ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.fillText(`LAP ${current.lap}`, 14, canvas.height - 14);
+      ctx.fillText(`LAP ${current.lap}`, 14, canvasHeight - 14);
       if (current.inSc) {
         ctx.fillStyle = "rgba(215,177,90,0.9)";
-        ctx.fillText("SAFETY CAR", 86, canvas.height - 14);
+        ctx.fillText("SAFETY CAR", 86, canvasHeight - 14);
       } else if (current.isRaining) {
         ctx.fillStyle = "rgba(77,142,207,0.9)";
-        ctx.fillText("RAIN", 86, canvas.height - 14);
+        ctx.fillText("RAIN", 86, canvasHeight - 14);
       }
 
       const lastLap = current.lap === totalRef.current && totalRef.current > 0;
@@ -331,16 +360,21 @@ export function TrackCanvas({
         ctx.textAlign = "center";
         ctx.font = "bold 13px IBM Plex Sans";
         ctx.fillStyle = finishRef.current ? "rgba(231,237,246,0.9)" : "rgba(196,69,60,0.92)";
-        ctx.fillText(finishRef.current ? "CHEQUERED FLAG" : "LAST LAP", canvas.width / 2, 22);
+        ctx.fillText(finishRef.current ? "CHEQUERED FLAG" : "LAST LAP", canvasWidth / 2, 22);
       }
     };
 
-    resize();
-    const onResize = (): void => resize();
-    window.addEventListener("resize", onResize);
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        resize(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+    resize(wrap.clientWidth, wrap.clientHeight);
+    resizeObserver.observe(wrap);
     raf = requestAnimationFrame(frame);
     return () => {
-      window.removeEventListener("resize", onResize);
+      resizeObserver.disconnect();
       cancelAnimationFrame(raf);
     };
   }, [circuit]);

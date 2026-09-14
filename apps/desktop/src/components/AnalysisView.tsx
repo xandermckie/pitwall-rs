@@ -1,6 +1,6 @@
 import type { SimResponse } from "../types/sim";
 import type { JSX } from "react";
-import { formatGap, formatPercent, formatPosition } from "../utils/format";
+import { formatGap, formatPercent, formatPercentRange, formatPosition } from "../utils/format";
 import { PositionHistogram } from "./PositionHistogram";
 
 interface AnalysisViewProps {
@@ -35,20 +35,37 @@ export function AnalysisView({ result }: AnalysisViewProps): JSX.Element {
           <div className="stat-card">
             <div className="label">P(podium)</div>
             <div className="value">{formatPercent(monteCarlo.pPodium)}</div>
+            <div className="label">
+              95%: {formatPercentRange(monteCarlo.pPodiumCiLow, monteCarlo.pPodiumCiHigh)}
+            </div>
           </div>
           <div className="stat-card">
             <div className="label">P(win)</div>
             <div className="value">{formatPercent(monteCarlo.pWin)}</div>
+            <div className="label">
+              95%: {formatPercentRange(monteCarlo.pWinCiLow, monteCarlo.pWinCiHigh)}
+            </div>
           </div>
           <div className="stat-card">
             <div className="label">P(points)</div>
             <div className="value">{formatPercent(monteCarlo.pPoints)}</div>
+            <div className="label">
+              95%: {formatPercentRange(monteCarlo.pPointsCiLow, monteCarlo.pPointsCiHigh)}
+            </div>
           </div>
           <div className="stat-card">
             <div className="label">5th–95th</div>
             <div className="value">
               {formatPosition(monteCarlo.p05Position)}–{formatPosition(monteCarlo.p95Position)}
             </div>
+          </div>
+          <div className="stat-card">
+            <div className="label">Position std dev</div>
+            <div className="value">{monteCarlo.positionStdDev.toFixed(2)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="label">Position IQR</div>
+            <div className="value">{monteCarlo.positionIqr.toFixed(2)}</div>
           </div>
           <div className="stat-card">
             <div className="label">Strategy score</div>
@@ -61,6 +78,10 @@ export function AnalysisView({ result }: AnalysisViewProps): JSX.Element {
           Seed {seed}. Playback is the run nearest the median finish. Team haul this run:{" "}
           {playback.stats.teamPoints} pts. Gap to winner: {formatGap(playback.stats.gapToWinner)}.
           Safety-car rate {formatPercent(monteCarlo.scRate)}. Rain rate {formatPercent(monteCarlo.rainRate)}.
+        </p>
+        <p className="assumptions">
+          Wilson 95% ranges describe Monte Carlo sampling uncertainty from finite iterations, not
+          real-world model error.
         </p>
         <h2 className="section-kicker" style={{ marginTop: 24 }}>Assumptions</h2>
         <p className="assumptions">

@@ -1,70 +1,82 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { LapSnapshot, RaceResult } from "../types/sim";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LiveLapSnapshot, RaceResult } from "../types/sim";
+import { interpolateFrame, raceDuration } from "../utils/interpolate";
+import { advanceRaceTime, targetCompletedLap } from "../utils/playback";
 
 export interface PlaybackState {
-  index: number;
+  raceTime: number;
+  duration: number;
   isPaused: boolean;
   isComplete: boolean;
-  speedMs: number;
-  snapshot: LapSnapshot | null;
-  setSpeedMs: (ms: number) => void;
+  speed: number;
+  snapshot: LiveLapSnapshot | null;
+  setSpeed: (speed: number) => void;
   togglePause: () => void;
-  scrubTo: (lapIndex: number) => void;
+  scrubToTime: (seconds: number) => void;
+  skipLap: (delta: number) => void;
   restart: () => void;
 }
 
 export function usePlayback(
   race: RaceResult | null,
-  initialSpeedMs: number,
+  initialSpeed: number,
 ): PlaybackState {
-  const [index, setIndex] = useState(0);
+  const [raceTime, setRaceTime] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const [speedMs, setSpeedMs] = useState(initialSpeedMs);
-  const indexRef = useRef(0);
+  const [speed, setSpeedState] = useState(initialSpeed);
+  const raceTimeRef = useRef(0);
   const pausedRef = useRef(false);
+  const speedRef = useRef(initialSpeed);
+  const duration = useMemo(() => (race ? raceDuration(race) : 0), [race]);
 
   useEffect(() => {
-    indexRef.current = 0;
+    raceTimeRef.current = 0;
     pausedRef.current = false;
-    setIndex(0);
+    speedRef.current = initialSpeed;
+    setRaceTime(0);
     setIsPaused(false);
     setIsComplete(false);
-    setSpeedMs(initialSpeedMs);
-  }, [race, initialSpeedMs]);
+    setSpeedState(initialSpeed);
+  }, [race, initialSpeed]);
 
   useEffect(() => {
-    indexRef.current = index;
-  }, [index]);
-
-  useEffect(() => {
-    pausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    if (!race || race.laps.length === 0) {
+    if (!race || duration <= 0) {
       return undefined;
     }
 
-    const timer = window.setInterval(() => {
-      if (pausedRef.current) {
-        return;
+    let animationFrame = 0;
+    let previousTimestamp: number | null = null;
+    const tick = (timestamp: number): void => {
+      if (previousTimestamp === null) {
+        previousTimestamp = timestamp;
       }
-      const next = indexRef.current + 1;
-      if (next >= race.laps.length) {
-        setIsComplete(true);
-        setIsPaused(true);
-        pausedRef.current = true;
-        return;
+      const elapsed = timestamp - previousTimestamp;
+      previousTimestamp = timestamp;
+
+      if (!pausedRef.current) {
+        const next = advanceRaceTime(
+          raceTimeRef.current,
+          elapsed,
+          speedRef.current,
+          duration,
+        );
+        raceTimeRef.current = next;
+        setRaceTime(next);
+        if (next >= duration) {
+          pausedRef.current = true;
+          setIsPaused(true);
+          setIsComplete(true);
+        }
       }
-      indexRef.current = next;
-      setIndex(next);
-    }, speedMs);
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+    animationFrame = window.requestAnimationFrame(tick);
 
     return () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(animationFrame);
     };
-  }, [race, speedMs]);
+  }, [duration, race]);
 
   const togglePause = useCallback((): void => {
     setIsPaused((prev) => {
@@ -74,33 +86,65 @@ export function usePlayback(
     });
   }, []);
 
-  const scrubTo = useCallback((lapIndex: number): void => {
-    indexRef.current = lapIndex;
-    setIndex(lapIndex);
-    setIsPaused(true);
-    pausedRef.current = true;
-    setIsComplete(false);
+  const setSpeed = useCallback((nextSpeed: number): void => {
+    const safeSpeed = Math.max(nextSpeed, 1);
+    speedRef.current = safeSpeed;
+    setSpeedState(safeSpeed);
   }, []);
 
+  const scrubToTime = useCallback((seconds: number): void => {
+    const next = Math.min(Math.max(seconds, 0), duration);
+    raceTimeRef.current = next;
+    setRaceTime(next);
+    setIsPaused(true);
+    pausedRef.current = true;
+    setIsComplete(next >= duration);
+  }, [duration]);
+
+  const snapshot = useMemo(
+    () => (race ? interpolateFrame(race, raceTime) : null),
+    [race, raceTime],
+  );
+
+  const skipLap = useCallback((delta: number): void => {
+    if (!race || !snapshot) {
+      return;
+    }
+    const leaderCompletedLaps =
+      snapshot.cars.find((car) => car.position === 1)?.completedLaps ?? 0;
+    const targetCompleted = targetCompletedLap(
+      leaderCompletedLaps,
+      delta,
+      race.meta.totalLaps,
+    );
+    if (targetCompleted === 0) {
+      scrubToTime(0);
+      return;
+    }
+    const targetLap = race.laps[targetCompleted - 1];
+    const leader = targetLap?.cars.find((car) => car.position === 1);
+    scrubToTime(leader?.cumTime ?? duration);
+  }, [duration, race, scrubToTime, snapshot]);
+
   const restart = useCallback((): void => {
-    indexRef.current = 0;
-    setIndex(0);
+    raceTimeRef.current = 0;
+    setRaceTime(0);
     setIsPaused(false);
     pausedRef.current = false;
     setIsComplete(false);
   }, []);
 
-  const snapshot = race?.laps[index] ?? null;
-
   return {
-    index,
+    raceTime,
+    duration,
     isPaused,
     isComplete,
-    speedMs,
+    speed,
     snapshot,
-    setSpeedMs,
+    setSpeed,
     togglePause,
-    scrubTo,
+    scrubToTime,
+    skipLap,
     restart,
   };
 }

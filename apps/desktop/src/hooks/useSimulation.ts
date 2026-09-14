@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { runSimulation } from "../api/commands";
 import type { SimConfig, SimResponse } from "../types/sim";
+import { simulationErrorMessage } from "../utils/simulationValidation";
 
 export interface SimulationState {
   result: SimResponse | null;
@@ -22,9 +23,8 @@ export function useSimulation(): SimulationState {
       const response = await runSimulation(config);
       setResult(response);
       return response;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+    } catch (error) {
+      setError(simulationErrorMessage(error));
       setResult(null);
       return null;
     } finally {

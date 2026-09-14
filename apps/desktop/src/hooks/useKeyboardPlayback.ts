@@ -18,7 +18,12 @@ export function useKeyboardPlayback({
 
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
+      if (
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
       if (event.key === " ") {

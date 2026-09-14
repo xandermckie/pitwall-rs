@@ -1,4 +1,9 @@
-import type { LapSnapshot, RaceResult, TyreModel } from "../types/sim";
+import type {
+  LapSnapshot,
+  LiveLapSnapshot,
+  RaceResult,
+  TyreModel,
+} from "../types/sim";
 
 export type EventKind = "sc" | "sc-end" | "rain" | "pit" | "gain" | "drop" | "fl" | "overtake" | "lead";
 
@@ -12,6 +17,13 @@ export interface RaceEvent {
 export interface EventScanState {
   positions: Map<string, number>;
   leader: string | null;
+}
+
+export function fullyCompletedFieldLaps(snapshot: LiveLapSnapshot): number {
+  if (snapshot.cars.length === 0) {
+    return 0;
+  }
+  return Math.min(...snapshot.cars.map((car) => car.completedLaps));
 }
 
 export function detectLapEvents(

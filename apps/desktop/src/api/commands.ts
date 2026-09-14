@@ -7,6 +7,10 @@ import type {
   Team,
   TyreModel,
 } from "../types/sim";
+import {
+  SimulationInputError,
+  validateSimConfig,
+} from "../utils/simulationValidation";
 
 export async function fetchCalendar(): Promise<Race[]> {
   return invoke<Race[]>("get_calendar");
@@ -25,5 +29,9 @@ export async function fetchTyreModel(): Promise<TyreModel> {
 }
 
 export async function runSimulation(config: SimConfig): Promise<SimResponse> {
+  const validationError = validateSimConfig(config);
+  if (validationError) {
+    throw new SimulationInputError(validationError);
+  }
   return invoke<SimResponse>("simulate", { config });
 }

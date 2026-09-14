@@ -1,3 +1,5 @@
+import circuitPathData from "../data/circuit-paths.json";
+
 export interface TrackPoint {
   x: number;
   y: number;
@@ -25,6 +27,11 @@ export interface CircuitDef {
   water: TrackPoint[][];
   labels: TrackLabel[];
   theme: TrackTheme;
+}
+
+interface TrackAlignment {
+  startIndex: number;
+  reverse: boolean;
 }
 
 const GRASS: TrackTheme = {
@@ -267,6 +274,62 @@ export const CIRCUITS: Record<string, CircuitDef> = {
     ],
   },
 };
+
+const TRACK_ALIGNMENTS: Record<string, TrackAlignment> = {
+  "Albert Park": { startIndex: 0, reverse: false },
+  Shanghai: { startIndex: 0, reverse: false },
+  Suzuka: { startIndex: 0, reverse: false },
+  "Bahrain Int'l": { startIndex: 0, reverse: false },
+  "Jeddah Corniche": { startIndex: 0, reverse: false },
+  Barcelona: { startIndex: 0, reverse: false },
+  "Monte Carlo": { startIndex: 0, reverse: false },
+  "Gilles Villeneuve": { startIndex: 0, reverse: false },
+  Silverstone: { startIndex: 0, reverse: false },
+  Monza: { startIndex: 0, reverse: false },
+  "Marina Bay": { startIndex: 0, reverse: false },
+  "Yas Marina": { startIndex: 0, reverse: false },
+};
+
+export function alignCircuitPath(
+  path: readonly TrackPoint[],
+  startIndex: number,
+  reverse: boolean,
+): TrackPoint[] {
+  if (path.length === 0) {
+    return [];
+  }
+  const normalizedStart = ((startIndex % path.length) + path.length) % path.length;
+  const aligned = path.map((_, offset) => path[(normalizedStart + offset) % path.length]);
+  if (!reverse) {
+    return aligned;
+  }
+  return [aligned[0], ...aligned.slice(1).reverse()];
+}
+
+function anchorLabelsToPath(labels: readonly TrackLabel[], path: readonly TrackPoint[]): TrackLabel[] {
+  return labels.map((label) => {
+    const nearest = path.reduce<TrackPoint | null>((best, point) => {
+      if (!best) {
+        return point;
+      }
+      const bestDistance = Math.hypot(best.x - label.x, best.y - label.y);
+      const pointDistance = Math.hypot(point.x - label.x, point.y - label.y);
+      return pointDistance < bestDistance ? point : best;
+    }, null);
+    return nearest ? { ...label, x: nearest.x, y: nearest.y } : label;
+  });
+}
+
+const gpsPaths = circuitPathData as Record<string, TrackPoint[]>;
+for (const [name, alignment] of Object.entries(TRACK_ALIGNMENTS)) {
+  const circuit = CIRCUITS[name];
+  const gpsPath = gpsPaths[name];
+  if (circuit && gpsPath) {
+    circuit.path = alignCircuitPath(gpsPath, alignment.startIndex, alignment.reverse);
+    circuit.labels = anchorLabelsToPath(circuit.labels, circuit.path);
+    circuit.water = [];
+  }
+}
 
 export function genericPath(): TrackPoint[] {
   const out: TrackPoint[] = [];

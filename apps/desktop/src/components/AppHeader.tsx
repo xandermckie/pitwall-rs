@@ -9,12 +9,11 @@ interface AppHeaderProps {
   isRaining: boolean;
   lastLap: boolean;
   onModeChange: (mode: AppMode) => void;
-  onPause: () => void;
-  isPaused: boolean;
-  pauseDisabled: boolean;
-  speedMs: number;
-  onSpeedChange: (ms: number) => void;
   onReset: () => void;
+  isFullscreen: boolean;
+  isFullscreenPending: boolean;
+  fullscreenError: string | null;
+  onFullscreenToggle: () => Promise<void>;
 }
 
 export function AppHeader({
@@ -25,12 +24,11 @@ export function AppHeader({
   isRaining,
   lastLap,
   onModeChange,
-  onPause,
-  isPaused,
-  pauseDisabled,
-  speedMs,
-  onSpeedChange,
   onReset,
+  isFullscreen,
+  isFullscreenPending,
+  fullscreenError,
+  onFullscreenToggle,
 }: AppHeaderProps): JSX.Element {
   return (
     <header className="header">
@@ -62,20 +60,23 @@ export function AppHeader({
       </div>
 
       <div className="header-actions">
-        <select
-          className="btn"
-          value={speedMs}
-          onChange={(event) => onSpeedChange(Number(event.target.value))}
-          aria-label="Playback speed"
-          disabled={!canOpenRace}
+        <span
+          className="header-error"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          <option value={900}>Slow</option>
-          <option value={400}>Normal</option>
-          <option value={120}>Fast</option>
-          <option value={30}>Ultra</option>
-        </select>
-        <button className="btn" type="button" onClick={onPause} disabled={pauseDisabled}>
-          {isPaused ? "Resume" : "Pause"}
+          {fullscreenError ?? ""}
+        </span>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          aria-label={isFullscreen ? "Exit fullscreen mode" : "Enter fullscreen mode"}
+          aria-pressed={isFullscreen}
+          disabled={isFullscreenPending}
+          onClick={() => void onFullscreenToggle()}
+        >
+          {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         </button>
         <button className="btn btn-ghost" type="button" onClick={onReset}>
           New briefing

@@ -1,37 +1,44 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
+import type { ChartHistory } from "../utils/chartHistory";
 
 interface LiveChartsProps {
-  gap: number;
-  tyreDelta: number;
-  lapTime: number;
-  resetKey: string;
+  history: ChartHistory;
 }
 
-const HISTORY = 45;
-
-export function LiveCharts({ gap, tyreDelta, lapTime, resetKey }: LiveChartsProps): JSX.Element {
+export function LiveCharts({ history }: LiveChartsProps): JSX.Element {
   const gapRef = useRef<HTMLCanvasElement | null>(null);
   const degRef = useRef<HTMLCanvasElement | null>(null);
   const lapRef = useRef<HTMLCanvasElement | null>(null);
-  const historyRef = useRef({ gap: [] as number[], deg: [] as number[], lap: [] as number[] });
+  const historyRef = useRef<ChartHistory>({ gap: [], tyreDelta: [], lapTime: [] });
 
   useEffect(() => {
-    historyRef.current = { gap: [], deg: [], lap: [] };
-  }, [resetKey]);
+    historyRef.current = history;
+    drawChart(gapRef.current, history.gap, "#4d8ecf", false);
+    drawChart(degRef.current, history.tyreDelta, "#d7b15a", true);
+    drawChart(lapRef.current, history.lapTime, "#3dba7e", false);
+  }, [history]);
 
   useEffect(() => {
-    const hist = historyRef.current;
-    hist.gap.push(gap);
-    hist.deg.push(tyreDelta);
-    hist.lap.push(lapTime);
-    if (hist.gap.length > HISTORY) hist.gap.shift();
-    if (hist.deg.length > HISTORY) hist.deg.shift();
-    if (hist.lap.length > HISTORY) hist.lap.shift();
-    drawChart(gapRef.current, hist.gap, "#4d8ecf", false);
-    drawChart(degRef.current, hist.deg, "#d7b15a", true);
-    drawChart(lapRef.current, hist.lap, "#3dba7e", false);
-  }, [gap, tyreDelta, lapTime]);
+    const drawCharts = (): void => {
+      const hist = historyRef.current;
+      drawChart(gapRef.current, hist.gap, "#4d8ecf", false);
+      drawChart(degRef.current, hist.tyreDelta, "#d7b15a", true);
+      drawChart(lapRef.current, hist.lapTime, "#3dba7e", false);
+    };
+    const resizeObserver = new ResizeObserver(drawCharts);
+    const canvases = [gapRef.current, degRef.current, lapRef.current];
+    for (const canvas of canvases) {
+      if (canvas) {
+        resizeObserver.observe(canvas);
+      }
+    }
+    drawCharts();
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   return (
     <div className="chart-strip">
@@ -57,23 +64,35 @@ function drawChart(
   color: string,
   zeroCentre: boolean,
 ): void {
-  if (!canvas || data.length < 2) {
+  if (!canvas) {
     return;
   }
-  const parent = canvas.parentElement;
-  const width = parent?.clientWidth ?? 200;
-  const height = (parent?.clientHeight ?? 120) - 22;
-  canvas.width = width;
-  canvas.height = height;
+  const width = Math.floor(canvas.clientWidth);
+  const height = Math.floor(canvas.clientHeight);
+  if (width < 1 || height < 1) {
+    return;
+  }
+  const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+  const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
+  const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     return;
   }
-  const pad = { top: 8, right: 10, bottom: 16, left: 36 };
-  const cw = width - pad.left - pad.right;
-  const ch = height - pad.top - pad.bottom;
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.fillStyle = "#0a0d12";
   ctx.fillRect(0, 0, width, height);
+  if (data.length < 2) {
+    return;
+  }
+
+  const pad = { top: 8, right: 10, bottom: 16, left: 36 };
+  const cw = Math.max(1, width - pad.left - pad.right);
+  const ch = Math.max(1, height - pad.top - pad.bottom);
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = Math.max(max - min, 0.2);

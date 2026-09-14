@@ -25,6 +25,10 @@ export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+export function formatPercentRange(low: number, high: number): string {
+  return `${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}%`;
+}
+
 export function formatPosition(position: number): string {
   return `P${position}`;
 }
